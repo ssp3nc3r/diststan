@@ -1,0 +1,20 @@
+# macOS
+.DS_Store
+
+# R
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.Rcheck/
+*.tar.gz
+
+# distributed-run artifacts
+.dist_data/
+dist_demo_*/
+out/
+*.csv
+
+# compiled stan binaries / objects (keep .stan and .hpp source)
+inst/stan/demo_reduce_sum
+*.o
