@@ -8,7 +8,9 @@
 
 library(diststan)
 library(cmdstanr)
-set_cmdstan_path("~/.cmdstan/cmdstan-2.39.0")
+# No set_cmdstan_path() needed: each machine (and each daemon) auto-detects its
+# own CmdStan, as cmdstanr normally does. Set CMDSTAN or call set_cmdstan_path()
+# only if yours is in a nonstandard location.
 
 # The toy model ships in the package; copy it to a writable working dir so the
 # (mount-transport) demo can stage data next to it.

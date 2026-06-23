@@ -120,8 +120,13 @@
 #' @return `hosts`, invisibly.
 #' @export
 dist_push <- function(hosts, files, dest) {
-  files <- normalizePath(files, mustWork = TRUE)
   local <- .dist_is_local(hosts)
+  if (any(!local) && !nzchar(Sys.which("rsync")))
+    stop("transport = \"copy\" needs `rsync` on the controller (and each host). ",
+         "macOS and most Linux ship it; on Windows install it via Git Bash / WSL ",
+         "/ cwRsync, or use transport = \"mount\" over a shared filesystem.",
+         call. = FALSE)
+  files <- normalizePath(files, mustWork = TRUE)
   for (i in seq_along(hosts)) {
     if (local[i]) {
       d <- path.expand(dest)
@@ -166,10 +171,13 @@ dist_push <- function(hosts, files, dest) {
 #' @param output_basename `NULL` (default) => cmdstanr's `<model>-<timestamp>`,
 #'   giving `<model>-<stamp>-<chain>.csv`. A string names the run.
 #' @param cpp_options,stanc_options,cmdstan_path Compile settings passed to
-#'   [cmdstanr::cmdstan_model()] on each host. `cpp_options` defaults to
-#'   `stan_threads = TRUE` (required) plus `-framework Accelerate` (macOS);
-#'   `stanc_options` defaults to `allow-undefined` iff a `user_header` is given;
-#'   `cmdstan_path` defaults to this machine's, assumed identical on every host.
+#'   [cmdstanr::cmdstan_model()] on each host. `cpp_options` defaults to the
+#'   portable `stan_threads = TRUE` (required for `threads_per_chain`); on macOS,
+#'   add `LDFLAGS_OS = "-framework Accelerate"` to link Apple's vForce/Accelerate.
+#'   `stanc_options` defaults to `allow-undefined` iff a `user_header` is given.
+#'   `cmdstan_path = NULL` (default) => every host auto-detects its own CmdStan
+#'   the way cmdstanr does (`CMDSTAN` env or `~/.cmdstan`), so a mixed-OS cluster
+#'   works; pass a path only when it is identical on every host (shared mount).
 #' @param url Override the controller URL daemons dial back to (e.g. a
 #'   10GbE/Thunderbolt address). Default `mirai::host_url()`, or a loopback URL
 #'   when a host uses `tunnel = TRUE`.
@@ -189,10 +197,9 @@ dist_fit <- function(stan_file, data, hosts, chains = 1,
                      tunnel = FALSE, output_dir,
                      work_dir = getwd(), exe_dir = NULL,
                      user_header = NULL, init = NULL, prep_data = NULL,
-                     cpp_options = list(stan_threads = TRUE,
-                                        LDFLAGS_OS = "-framework Accelerate"),
+                     cpp_options = list(stan_threads = TRUE),
                      stanc_options = NULL,
-                     cmdstan_path = cmdstanr::cmdstan_path(),
+                     cmdstan_path = NULL,
                      output_basename = NULL, url = NULL,
                      transport = "mount", gather_dir = NULL, hostdir = NULL, ...) {
   stopifnot(is.character(hosts), length(hosts) >= 1L, is.character(data))

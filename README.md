@@ -115,15 +115,53 @@ without a `cluster` — still works for one-off runs.)
 | `dist_progress()` | combined live board + teardown for a handle |
 | `dist_push()` | rsync source + data to each host (used by `transport = "copy"`) |
 
-## Requirements
+## Prerequisites
 
-- `mirai` (>= 2.6) and `cmdstanr` installed on **every** machine, with cmdstan at
-  the same path.
-- Passwordless SSH from the controller to each remote host.
-- For `transport = "mount"` only: the project (`work_dir`) and `output_dir`
-  reachable at the **same absolute path** on every machine (e.g. NFS/SMB). With
-  `transport = "copy"` + `tunnel = TRUE`, **SSH is all you need** -- no shared
-  mount and no routable controller.
+On **every** machine (the controller and each worker):
+
+- **R**, with **`cmdstanr`** and **`mirai` (>= 2.6)** installed.
+- A **working CmdStan toolchain** that cmdstanr can compile with — i.e.
+  `cmdstanr::check_cmdstan_toolchain()` passes and `cmdstan_model()` builds a
+  model locally. Each host uses *its own* CmdStan (auto-detected from the
+  `CMDSTAN` env var or `~/.cmdstan`, exactly as cmdstanr does), so the install
+  path does **not** need to match across machines. Pass `cmdstan_path=` only if
+  you deliberately want one shared path.
+- Your **model + any custom C++ header** must compile on each host. diststan
+  ships the `.stan`/`.hpp` to every machine but does not make your C++ portable
+  (see [Platforms](#platforms)).
+
+On the **controller** (the machine you launch from):
+
+- **Passwordless SSH** to each worker (key-based — `ssh me@worker` connects with
+  no prompt). Each worker therefore needs an **SSH server** running and reachable.
+
+Depending on transport:
+
+- **`transport = "mount"`** — the project (`work_dir`) and `output_dir` must be
+  reachable at the **same absolute path** on every machine (NFS/SMB/etc.).
+  Nothing is copied.
+- **`transport = "copy"`** — **`rsync`** must be on the controller *and* each
+  worker (inputs are pushed and draws pulled back over SSH). With
+  `transport = "copy"` + `tunnel = TRUE`, **SSH is all you need** — no shared
+  mount, no VPN, no open ports.
+
+## Platforms
+
+In principle diststan runs across a **mixed cluster of macOS, Linux, and
+Windows**: each host compiles its *own* native binary and auto-detects its *own*
+CmdStan, and the defaults are portable (`cpp_options = list(stan_threads =
+TRUE)`, nothing platform-specific linked). Two caveats:
+
+- **Compiler flags and custom C++ are yours to keep portable.** If your model
+  needs, say, Apple's Accelerate, add it on the relevant hosts yourself —
+  `cpp_options = list(stan_threads = TRUE, LDFLAGS_OS = "-framework Accelerate")`
+  — and a `user_header` that calls OS-specific intrinsics will only build where
+  they exist.
+- **`transport = "copy"` needs `rsync`** (and SSH) on every host; on Windows that
+  means Git Bash / WSL / cwRsync, or simply use `transport = "mount"`.
+
+The author's day-to-day cluster is all Apple Silicon, so the cross-OS paths are
+designed-in but not yet battle-tested — reports welcome.
 
 ## Try it
 

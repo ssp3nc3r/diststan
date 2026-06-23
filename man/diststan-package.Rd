@@ -11,7 +11,8 @@ Run 'cmdstanr' MCMC chains across a small heterogeneous cluster of machines over
 \seealso{
 Useful links:
 \itemize{
-  \item \url{https://github.com/scottspencer/diststan}
+  \item \url{https://github.com/ssp3nc3r/diststan}
+  \item Report bugs at \url{https://github.com/ssp3nc3r/diststan/issues}
 }
 
 }

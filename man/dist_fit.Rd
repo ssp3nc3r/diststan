@@ -18,9 +18,9 @@ dist_fit(
   user_header = NULL,
   init = NULL,
   prep_data = NULL,
-  cpp_options = list(stan_threads = TRUE, LDFLAGS_OS = "-framework Accelerate"),
+  cpp_options = list(stan_threads = TRUE),
   stanc_options = NULL,
-  cmdstan_path = cmdstanr::cmdstan_path(),
+  cmdstan_path = NULL,
   output_basename = NULL,
   url = NULL,
   transport = "mount",
@@ -56,10 +56,13 @@ with the GLOBAL chain id). \code{prep_data(data, threads)} returns the data list
 for a host. Both must be self-contained (mirai does not export globals).}
 
 \item{cpp_options, stanc_options, cmdstan_path}{Compile settings passed to
-\code{\link[cmdstanr:cmdstan_model]{cmdstanr::cmdstan_model()}} on each host. \code{cpp_options} defaults to
-\code{stan_threads = TRUE} (required) plus \verb{-framework Accelerate} (macOS);
-\code{stanc_options} defaults to \code{allow-undefined} iff a \code{user_header} is given;
-\code{cmdstan_path} defaults to this machine's, assumed identical on every host.}
+\code{\link[cmdstanr:cmdstan_model]{cmdstanr::cmdstan_model()}} on each host. \code{cpp_options} defaults to the
+portable \code{stan_threads = TRUE} (required for \code{threads_per_chain}); on macOS,
+add \code{LDFLAGS_OS = "-framework Accelerate"} to link Apple's vForce/Accelerate.
+\code{stanc_options} defaults to \code{allow-undefined} iff a \code{user_header} is given.
+\code{cmdstan_path = NULL} (default) => every host auto-detects its own CmdStan
+the way cmdstanr does (\code{CMDSTAN} env or \verb{~/.cmdstan}), so a mixed-OS cluster
+works; pass a path only when it is identical on every host (shared mount).}
 
 \item{output_basename}{\code{NULL} (default) => cmdstanr's \verb{<model>-<timestamp>},
 giving \verb{<model>-<stamp>-<chain>.csv}. A string names the run.}

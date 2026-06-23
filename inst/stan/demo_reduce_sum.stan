@@ -3,7 +3,8 @@
 //   * a custom C++ function (`scale_shift`) DECLARED here, DEFINED in
 //     demo_funcs.hpp -> needs stanc `allow-undefined` + a user_header
 //   * reduce_sum(...) with a data-supplied `grainsize` -> needs stan_threads
-//   * -framework Accelerate is linked via cpp_options (not used directly here)
+// The custom C++ here is plain/portable (no Accelerate), so the demo compiles on
+// macOS, Linux, and Windows alike.
 //
 // It just estimates the mean/sd of N normals; the point is the machinery.
 functions {
