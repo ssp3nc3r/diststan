@@ -110,6 +110,45 @@
        log = log_file)
 }
 
+# ---- copy-transport helpers ---------------------------------------------------
+
+# Project-local headers a C++ header pulls in, transitively. Each #include "x" is
+# resolved relative to the file that names it; system <...> includes are the
+# compiler's job and ignored. Returns existing files as absolute paths, EXCLUDING
+# `header` itself. Quoted includes that don't resolve to a file are skipped
+# (assumed to live on the compiler's include path). Lets transport = "copy" ship
+# exactly the headers a user_header needs -- no more, no less.
+.dist_header_deps <- function(header) {
+  header <- normalizePath(header, mustWork = TRUE)
+  seen <- deps <- character(0)
+  scan <- function(file) {
+    if (file %in% seen) return(invisible())
+    seen <<- c(seen, file)
+    lines <- tryCatch(readLines(file, warn = FALSE), error = function(e) character(0))
+    hits  <- grep('#[[:space:]]*include[[:space:]]*"', lines, value = TRUE)
+    incs  <- sub('.*#[[:space:]]*include[[:space:]]*"([^"]+)".*', "\\1", hits)
+    for (inc in incs) {
+      cand <- file.path(dirname(file), inc)
+      if (file.exists(cand)) {
+        cand <- normalizePath(cand)
+        if (!(cand %in% deps)) deps <<- c(deps, cand)
+        scan(cand)
+      }
+    }
+  }
+  scan(header)
+  setdiff(deps, header)
+}
+
+# rsync flags: GNU rsync gets -z (wire compression); macOS openrsync has no -z and
+# errors on it, so it gets plain -a. Detected once from `rsync --version`.
+.dist_rsync_opts <- function() {
+  v <- tryCatch(paste(system2("rsync", "--version", stdout = TRUE, stderr = TRUE),
+                      collapse = " "),
+                error = function(e) "")
+  if (grepl("openrsync", v, ignore.case = TRUE)) "-a" else "-az"
+}
+
 # ---- dist_push ----------------------------------------------------------------
 
 #' Copy code + data to each machine's local working directory (transport="push")
@@ -127,6 +166,7 @@ dist_push <- function(hosts, files, dest) {
          "/ cwRsync, or use transport = \"mount\" over a shared filesystem.",
          call. = FALSE)
   files <- normalizePath(files, mustWork = TRUE)
+  ropts <- .dist_rsync_opts()
   for (i in seq_along(hosts)) {
     if (local[i]) {
       d <- path.expand(dest)
@@ -134,7 +174,7 @@ dist_push <- function(hosts, files, dest) {
       file.copy(files, d, overwrite = TRUE)
     } else {
       system2("ssh", c(hosts[i], shQuote(sprintf("mkdir -p %s", dest))))
-      st <- system2("rsync", c("-az", shQuote(files),
+      st <- system2("rsync", c(ropts, shQuote(files),
                                sprintf("%s:%s/", hosts[i], dest)))
       if (st != 0L) stop(sprintf("rsync to %s failed (status %d)", hosts[i], st))
     }
@@ -410,13 +450,14 @@ dist_progress <- function(handle, interval = 0.5, teardown = TRUE) {
   # copy transport: pull each OK host's draws into the controller's gather dir
   # (compressed in transit) and rewrite the CSV paths to their local location.
   if (handle$transport == "copy") {
+    ropts <- .dist_rsync_opts()
     for (i in which(ok)) {
       r <- res[[i]]
       if (isTRUE(mc$local[i])) {
         file.copy(r$csv, handle$gather_dir, overwrite = TRUE)
       } else {
         for (f in r$csv)
-          system2("rsync", c("-az", sprintf("%s:%s", mc$host[i], f),
+          system2("rsync", c(ropts, sprintf("%s:%s", mc$host[i], f),
                              paste0(handle$gather_dir, "/")))
       }
       res[[i]]$csv <- file.path(handle$gather_dir, basename(r$csv))
@@ -592,7 +633,9 @@ dist_cluster <- function(hosts, chains = NA, threads_per_chain = NA,
 #'   filesystem visible at the same location on every host -- nothing is copied.
 #'   `"copy"`: `stan_file`/`data` are paths on the CONTROLLER; they are pushed to
 #'   a per-host temp dir, and each host's draws are pulled back into `output_dir`
-#'   on the controller. Use `"copy"` when there is no shared mount.
+#'   on the controller. A `user_header`'s transitive quoted `#include "..."`
+#'   dependencies are shipped alongside it, so a multi-file header tree compiles
+#'   on a host with no shared mount. Use `"copy"` when there is no shared mount.
 #' @param progress Show the live progress stream and block until done; tear down
 #'   on finish (default TRUE).
 #' @return If `progress`, a per-chain data.frame (`chain`, `host`, `csv`) -- with
@@ -643,8 +686,13 @@ dist_sample <- function(stan_file, data, cluster = NULL, output_dir,
     data_file <- if (is.character(data)) data else {
       f <- file.path(tempdir(), paste0(output_basename, ".rds")); saveRDS(data, f); f
     }
+    # Ship the user_header AND the project-local headers it #includes, transitively,
+    # so the model compiles on a host with no shared filesystem. All includes are
+    # bare siblings, so a flat push into hostdir resolves them.
+    header_deps <- if (is.null(user_header)) character(0) else .dist_header_deps(user_header)
     dist_push(hosts, c(stan_file, data_file,
-                       if (!is.null(user_header)) user_header), hostdir)
+                       if (!is.null(user_header)) user_header,
+                       header_deps), hostdir)
     dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
     handle <- dist_fit(
       stan_file = basename(stan_file), data = basename(data_file), hosts = hosts,

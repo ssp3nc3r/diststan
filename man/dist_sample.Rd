@@ -52,7 +52,9 @@ default 1. \code{threads_per_chain} \code{NA} => that host's cores / \code{paral
 filesystem visible at the same location on every host -- nothing is copied.
 \code{"copy"}: \code{stan_file}/\code{data} are paths on the CONTROLLER; they are pushed to
 a per-host temp dir, and each host's draws are pulled back into \code{output_dir}
-on the controller. Use \code{"copy"} when there is no shared mount.}
+on the controller. A \code{user_header}'s transitive quoted \verb{#include "..."}
+dependencies are shipped alongside it, so a multi-file header tree compiles
+on a host with no shared mount. Use \code{"copy"} when there is no shared mount.}
 
 \item{url}{Override the controller URL daemons dial back to (e.g. a
 10GbE/Thunderbolt address). Default \code{mirai::host_url()}, or a loopback URL
