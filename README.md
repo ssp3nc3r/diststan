@@ -105,6 +105,54 @@ without a `cluster` — still works for one-off runs.)
   back as it arrives (read from the shared dir, or over SSH in `copy` mode), with
   cmdstan's per-run chain numbers rewritten to global ids.
 
+## Passing an `init` function (and `prep_data`)
+
+`init` takes exactly what cmdstanr's does — a list, a list-of-lists (one per
+chain), or a **function** called with the chain id. The one thing to know:
+**function-valued arguments (`init`, `prep_data`) are shipped to the worker and
+called there**, and mirai serializes the function but **not** the controller's
+global environment. So the closure must carry everything it references.
+
+Whether you need `local()` depends solely on whether the function reaches outside
+its own arguments — it is not about `init` as such, but about free variables.
+
+**Self-contained → pass it directly.** Uses only its `chain_id` argument and base
+R / packages present on the workers:
+
+```r
+init = function(chain_id) {
+  set.seed(chain_id)                          # distinct, reproducible per chain
+  list(mu = rnorm(1, 0, 1), sigma = rexp(1, 1))
+}
+```
+
+**References controller-side objects → wrap it in `local()`.** Anything it reads
+from the controller (the data, a helper, hyperparameters) is a *free variable*
+that would resolve against the worker's *empty* global env and error. `local()`
+evaluates the block in a private environment, and the returned closure keeps that
+environment — so the captured objects travel with it:
+
+```r
+init = local({
+  dat        <- dat            # objects to ship alongside the closure
+  draw_prior <- draw_prior     # a helper it calls
+  function(chain_id) {
+    set.seed(chain_id)
+    draw_prior(dat, chain_id)  # uses the captured dat + helper
+  }
+})
+```
+
+Without `local()`, `dat` and `draw_prior` would be looked up in the worker's
+global env (empty) rather than the controller's, and the chain would fail to
+start. The same applies to `prep_data(data, threads)`.
+
+> **Captured helpers must be pure.** Copying a helper into the `local()` env
+> copies the function object, but the helper keeps *its own* enclosing
+> environment — if it in turn reads globals, it still breaks on the worker. Keep
+> captured helpers pure functions of their arguments (or carry their dependencies
+> too, or rebind their environment).
+
 ## Functions
 
 | function | role |
